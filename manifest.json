@@ -1,0 +1,19 @@
+{
+	"manifest_version": 2,
+	"name": "Soundcloud Liberator",
+	"version": "1.0",
+	"description": "Facilitates liberation of properly licensed Creative Commons content",
+	
+	"permissions": [
+		"activeTab",
+		"webRequest"
+	],
+	
+	"browser_action": {
+		"default_icon": "icons/free.png"
+	},
+
+	"background": {
+		"scripts": ["listener.js"]
+	}
+}
