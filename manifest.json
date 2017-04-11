@@ -6,7 +6,8 @@
 	
 	"permissions": [
 		"activeTab",
-		"webRequest"
+		"webRequest",
+		"https://api.soundcloud.com/*"
 	],
 	
 	"browser_action": {
