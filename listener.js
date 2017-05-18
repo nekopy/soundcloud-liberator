@@ -1,6 +1,7 @@
 'use strict';
 
 var targetFormat = "https://cf-hls-media.sndcdn.com/media/*"
+var playlistFormat = "https://cf-hls-media.sndcdn.com/playlist/*"
 var clientID = null
 
 var soundMap = new Map();
@@ -19,6 +20,29 @@ function xhrForJSON(request, continuation) {
 	});
 	xhr.open("GET", request);
 	xhr.send();
+}
+
+function xhrForText(request, continuation) {
+	var xhr = new XMLHttpRequest();
+	
+	xhr.addEventListener("load", () => {
+		continuation(xhr.responseText);
+	});
+	xhr.open("GET", request);
+	xhr.send();
+}
+
+function parsePlaylistContent(currentUrl, resolve) {
+	xhrForText(currentUrl, (response) => {
+		var splits = response.split('#');
+		var matchUrls = []
+		for (var i = 0; i < splits.length; i++) {
+			matchUrls = matchUrls.concat(splits[i].match(/http.*/))
+		}
+		var highestUrl = matchUrls.reverse()[1]
+		
+		resolve(highestUrl);
+	});
 }
 
 function resolveTrackId(currentUrl, resolve) {
@@ -104,16 +128,25 @@ function parseMp3Url(trackUrl) {
 	return [mp3Filename, highSample, downloadUrl];
 }
 
-function registerTrack(responseDetails) {
-	var results = parseMp3Url(responseDetails.url)
+function registerTrack(url) {
+	var results = parseMp3Url(url)
 	if (null == results[2])
 		return;
 	updateMap(results[0], results[1], results[2]);
 }
 
+function registerPlaylist(responseDetails) {
+	var gettingPlaylist = new Promise((resolve, reject) => {
+		parsePlaylistContent(responseDetails.url, resolve);	
+	});
+	gettingPlaylist.then((body) => {
+		registerTrack(body);
+	});
+}
+
 browser.webRequest.onCompleted.addListener(
-	registerTrack,
-	{urls: [targetFormat]}
+	registerPlaylist,
+	{urls: [playlistFormat]}
 );
 
 
