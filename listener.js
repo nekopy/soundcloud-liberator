@@ -1,19 +1,22 @@
 'use strict';
 
-var targetFormat = "https://cf-hls-media.sndcdn.com/media/*"
-var playlistFormat = "https://cf-hls-media.sndcdn.com/playlist/*"
-var clientID = null
+const targetFormat = "https://cf-hls-media.sndcdn.com/media/*";
+const playlistFormat = "https://cf-hls-media.sndcdn.com/playlist/*";
+let clientID = null;
 
-var soundMap = new Map();
+const soundMap = new Map();
 
-
+// Given a URL, just pull out the the mp3 part and ignore the 
+// cgi parameters and whatnot, and the path 
 function getMP3TrackFromUrl(url) {
-	var mp3Regex = /[a-zA-Z0-9]+\.128\.mp3/;
+	const mp3Regex = /[a-zA-Z0-9]+\.128\.mp3/;
 	return url.match(mp3Regex)[0];
 }
 
+
+// Peform an XHR request and return the content as a JSON object
 function xhrForJSON(request, continuation) {
-	var xhr = new XMLHttpRequest();
+	const xhr = new XMLHttpRequest();
 	
 	xhr.addEventListener("load", () => {
 		continuation(JSON.parse(xhr.responseText));
@@ -22,8 +25,9 @@ function xhrForJSON(request, continuation) {
 	xhr.send();
 }
 
+// Perform an XHR request and return the content as raw text
 function xhrForText(request, continuation) {
-	var xhr = new XMLHttpRequest();
+	const xhr = new XMLHttpRequest();
 	
 	xhr.addEventListener("load", () => {
 		continuation(xhr.responseText);
@@ -32,70 +36,52 @@ function xhrForText(request, continuation) {
 	xhr.send();
 }
 
+
+// Reads out a playlist and gives us the last entry, which ought to have 
+// the highest sample number, since it's the last track
 function parsePlaylistContent(currentUrl, resolve) {
 	xhrForText(currentUrl, (response) => {
-		var splits = response.split('#');
-		var matchUrls = []
-		for (var i = 0; i < splits.length; i++) {
+		const splits = response.split('#');
+		let matchUrls = []
+		for (let i = 0; i < splits.length; i++) {
 			matchUrls = matchUrls.concat(splits[i].match(/http.*/))
 		}
-		var highestUrl = matchUrls.reverse()[1]
+		const highestUrl = matchUrls.reverse()[1]
 		
 		resolve(highestUrl);
 	});
 }
 
+// From the current URL, give us the corresponding Track ID
 function resolveTrackId(currentUrl, resolve) {
 
-	var resolveUrl = "https://api.soundcloud.com/resolve?url=" + currentUrl + "&client_id=" + clientID;
+	const resolveUrl = `https://api.soundcloud.com/resolve?url=${currentUrl}&client_id=${clientID}`;
 	xhrForJSON(resolveUrl, (response) => {
 		resolve(response.id);
 	});
 }
 
+
+// Uses an unlisted API call to get the internal MP3 URL from a track ID
 function resolveStreamInfo(trackId, resolve) {
-	var streamsUrl = "https://api.soundcloud.com/i1/tracks/" + trackId +"/streams?client_id=" + clientID;
+	const streamsUrl = `https://api.soundcloud.com/i1/tracks/${trackId}/streams?client_id=${clientID}`;
 	
 	xhrForJSON(streamsUrl, (response) => {
 		resolve(getMP3TrackFromUrl(response.hls_mp3_128_url));
 	});	
 }
 
-
-browser.browserAction.onClicked.addListener((e) => {
-	console.log(e.url);
-	var testURL = e.url.search(/https:\/\/soundcloud\.com/);
-	if (-1 == testURL)
-		return;
-
-	if (null == clientID)
-		return;
-
-	var gettingTrackId = new Promise((resolve, reject) => {
-		resolveTrackId(e.url, resolve);	
-	});
-	gettingTrackId.then((trackId) => {
-		console.log("track Id: ", trackId);
-		var gettingStreamInfo = new Promise((resolve, reject) => {
-			resolveStreamInfo(trackId, resolve);
-		});
-		gettingStreamInfo.then((mp3Track) => {
-			console.log("Track is!!! ", mp3Track);
-			if (soundMap.has(mp3Track))
-				console.log(browser.tabs.create({"active": true, "url": soundMap.get(mp3Track).url}))
-		});
-	});
-});
-
-
+// Add the filename with the highest sample number to the map, only if it's the
+// highest sample number we've seen so far. This lets us figure out how 
+// long the track is
 function updateMap(mp3Filename, highSample, url) {
 	if (soundMap.has(mp3Filename)) {
-		var soundEntry = soundMap.get(mp3Filename);
+		const soundEntry = soundMap.get(mp3Filename);
 		if (soundEntry.highSample >= highSample) {
 			return;
 		}
 	}
-	var newEntry = {
+	const newEntry = {
 		"highSample": highSample,
 		"url": url
 	};
@@ -104,14 +90,15 @@ function updateMap(mp3Filename, highSample, url) {
 }
 
 
+// We wanna try and grab MP3 urls, and filter out things that aren't MP3 urls 
 function parseMp3Url(trackUrl) {
-	var retArray = [null, null]
+	let retArray = [null, null]
 	if (trackUrl.includes('playlist')) {
 		return retArray;
 	}
-	var urlArray = trackUrl.split('/')
-	var foundMedia = false
-	for (var i = 0; i < urlArray.length; i++) {
+	const urlArray = trackUrl.split('/')
+	let foundMedia = false
+	for (let i = 0; i < urlArray.length; i++) {
 		if (urlArray[i] == "media") {
 			foundMedia = i
 			break;
@@ -119,24 +106,29 @@ function parseMp3Url(trackUrl) {
 	}
 	if (!foundMedia)
 		return retArray;
-	var mp3Filename = getMP3TrackFromUrl(trackUrl);
+	const mp3Filename = getMP3TrackFromUrl(trackUrl);
 	console.log("Filename is ", mp3Filename);
-	var highSample = Number(urlArray[foundMedia + 2]);
+	const highSample = Number(urlArray[foundMedia + 2]);
 	console.log("high sample number is ", highSample)
 	urlArray[foundMedia + 1] = "0"
-	var downloadUrl = urlArray.join('/');
+	const downloadUrl = urlArray.join('/');
 	return [mp3Filename, highSample, downloadUrl];
 }
 
+
+// Take the MP3 url and add it to our map
 function registerTrack(url) {
-	var results = parseMp3Url(url)
+	const results = parseMp3Url(url)
 	if (null == results[2])
 		return;
 	updateMap(results[0], results[1], results[2]);
 }
 
+
+// When we get an M3U playlist, we want to pull the URL
+// of the very last track segment in the M3U and add it as a value to our associative map
 function registerPlaylist(responseDetails) {
-	var gettingPlaylist = new Promise((resolve, reject) => {
+	const gettingPlaylist = new Promise((resolve, reject) => {
 		parsePlaylistContent(responseDetails.url, resolve);	
 	});
 	gettingPlaylist.then((body) => {
@@ -144,18 +136,52 @@ function registerPlaylist(responseDetails) {
 	});
 }
 
-browser.webRequest.onCompleted.addListener(
-	registerPlaylist,
-	{urls: [playlistFormat]}
-);
 
-
+// Find the Client ID we can use for API calls from 
+// outbound requests we intercept
 function getClientID(responseDetails) {
 	clientID = responseDetails.url.split("client_id=")[1].split('&')[0];
 	console.log("Client ID is ", clientID);
 }
 
+
+// Tries to launch the tab that will allow the user to download the track
+// This is done by performing a lookup to try to get the URL of the track
+// This may fail silently if we haven't sniffed the Client ID or parsed the M3U file yet.
+function launchTrackTab(e) {
+	console.log(e.url);
+	const testURL = e.url.search(/https:\/\/soundcloud\.com/);
+	if (-1 == testURL)
+		return;
+
+	if (null == clientID)
+		return;
+
+	const gettingTrackId = new Promise((resolve, reject) => {
+		resolveTrackId(e.url, resolve);	
+	});
+	gettingTrackId.then((trackId) => {
+		console.log("track Id: ", trackId);
+		const gettingStreamInfo = new Promise((resolve, reject) => {
+			resolveStreamInfo(trackId, resolve);
+		});
+		gettingStreamInfo.then((mp3Track) => {
+			console.log("Track is!!! ", mp3Track);
+			if (soundMap.has(mp3Track))
+				console.log(browser.tabs.create({"active": true, "url": soundMap.get(mp3Track).url}))
+		});
+	});
+}
+
+browser.browserAction.onClicked.addListener(launchTrackTab);
+
+browser.webRequest.onCompleted.addListener(
+	registerPlaylist,
+	{urls: [playlistFormat]}
+);
+
 browser.webRequest.onCompleted.addListener(
 	getClientID,
 	{urls: ["https://api.soundcloud.com/i1/tracks/*"]}
 );
+
